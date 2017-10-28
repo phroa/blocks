@@ -2,10 +2,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Scanner;
+import java.util.*;
 
 public class Blocks {
 
@@ -15,13 +12,17 @@ public class Blocks {
     private static int width;
     private static int height;
     private static final List<int[]> inputBlocks = new ArrayList<>();
+    private static final List<int[]> used = new ArrayList<>();
     private static int[][] actualGrid;
 
     /**
-     * Hacky constants for getting parts of rectangles.
+     * Hacky constants for getting parts of rectangles as if they were object properties.
      */
     private static final int x = 0;
     private static final int y = 1;
+
+    private static final int[] origin = {0, 0};
+
     private static DrawBlock drawBlock;
 
     public static void main(String[] args) throws Exception {
@@ -32,91 +33,85 @@ public class Blocks {
 
         drawBlock.setupComplete();
 
-        if (explore(actualGrid, new int[]{0, 0})) {
+        boolean result = explore(actualGrid, origin);
+        if (result) {
             System.out.println("Solved in " + calls + " calls");
+            System.out.println(Arrays.deepToString(actualGrid));
         } else {
             System.out.println("Can't solve, took " + calls + " calls to find that out");
+            System.out.println(Arrays.deepToString(actualGrid));
         }
 
         drawBlock.printRect();
     }
 
-    private static boolean explore(int[][] searchSpace, int[] absoluteStartingPosition) {
+    /**
+     * Assume searchSpace is a totally empty grid, try to fit any remaining blocks inside it.
+     * This modifies the input array.
+     *
+     * @param searchSpace
+     * @return
+     */
+    private static boolean explore(int[][] searchSpace, int[] absoluteLocation) {
         calls++;
         System.out.println("calls = " + calls);
         System.out.println("trying to fit blocks in a " + searchSpace[0].length + " x " + searchSpace.length + " area");
 
-        int[] relativeStartingPosition;
-        // TODO WHILE?
-        if ((relativeStartingPosition = findEmptyCell(searchSpace)) != null) {
-            int[][] relativeEmptySpace = findEmptyArea(searchSpace, relativeStartingPosition);
-            for (int[] block : inputBlocks) {
-                int[] reversed = {block[y], block[x]};
-                int[] actualLocation = {
-                        absoluteStartingPosition[x] + relativeStartingPosition[x],
-                        absoluteStartingPosition[y] + relativeStartingPosition[y]};
+        if (used.size() == inputBlocks.size() || searchSpace[0].length == 0)
+            return true;
 
-                System.out.println("relativeEmptySpace = " + Arrays.deepToString(relativeEmptySpace));
-                System.out.println("block = " + Arrays.toString(block));
-                System.out.println("rectFits(block)    = " + rectFits(relativeEmptySpace, block, relativeStartingPosition));
-                System.out.println("rectFits(reversed) = " + rectFits(relativeEmptySpace, reversed, relativeStartingPosition));
-                System.out.println();
-                if (rectFits(relativeEmptySpace, block, relativeStartingPosition)) //noinspection Duplicates
-                {
-                    place(block, actualLocation);
-                    inputBlocks.remove(block);
-                    drawBlock.printRect();
-                    System.out.println();
+        for (int[] block : inputBlocks) {
+            if (used.contains(block))
+                continue;
 
-                    fill(relativeEmptySpace, block, relativeStartingPosition, calls);
+            int[] reversed = {block[y], block[x]};
 
-                    int[] newEmptyCell = findEmptyCell(relativeEmptySpace);
-                    if (newEmptyCell == null)
-                        return true;
-                    int[][] newEmptyArea = findEmptyArea(relativeEmptySpace, newEmptyCell);
-                    int[] newActualLocation = {
-                            absoluteStartingPosition[x] + newEmptyCell[x],
-                            absoluteStartingPosition[y] + newEmptyCell[y]};
-                    return explore(newEmptyArea, newActualLocation);
-                } else if (rectFits(relativeEmptySpace, reversed, relativeStartingPosition)) //noinspection Duplicates
-                {
-                    place(reversed, actualLocation);
-                    inputBlocks.remove(block);
-                    drawBlock.printRect();
-                    System.out.println();
+            int[] use;
 
-                    fill(relativeEmptySpace, reversed, relativeStartingPosition, calls);
-
-                    int[] newEmptyCell = findEmptyCell(relativeEmptySpace);
-                    if (newEmptyCell == null)
-                        return true;
-                    int[][] newEmptyArea = findEmptyArea(relativeEmptySpace, newEmptyCell);
-                    int[] newActualLocation = {
-                            absoluteStartingPosition[x] + newEmptyCell[x],
-                            absoluteStartingPosition[y] + newEmptyCell[y]};
-                    return explore(newEmptyArea, newActualLocation);
-                }
+            if (rectFits(searchSpace, block, origin)) {
+                use = block;
+            } else if (rectFits(searchSpace, reversed, origin)) {
+                use = reversed;
+            } else {
+                continue;
             }
+            place(searchSpace, use, absoluteLocation);
+
+            int[] location = findEmptyCell(searchSpace);
+            if (location == null)
+                return true;
+
+            int[][] newSearchSpace = findEmptyArea(searchSpace, location);
+            boolean res = explore(newSearchSpace, new int[]{absoluteLocation[x] + location[x], absoluteLocation[y] + location[y]});
+            copy(newSearchSpace, searchSpace, location);
+            return res;
+
         }
-
-
-
         return false;
     }
 
     private static void fill(int[][] grid, int[] rect, int[] where, int filling) {
-        for (int i = where[y]; i < rect[y]; i++) {
-            for (int j = where[x]; j < rect[x]; j++) {
-                grid[j][i] = filling;
+        for (int row = where[y]; row < rect[y]; row++) {
+            for (int column = where[x]; column < rect[x]; column++) {
+                grid[row][column] = filling;
             }
         }
     }
 
+    private static void copy(int[][] src, int[][] dest, int[] where) {
+        for (int row = 0; row < src.length; row++) {
+            for (int column = 0; column < src[0].length; column++) {
+                dest[row + where[y]][column + where[x]] = src[row][column];
+            }
+        }
+        System.out.println();
+    }
+
     private static boolean rectFits(int[][] space, int[] rect, int[] where) {
 
-        for (int i = where[y]; i < rect[y]; i++) {
-            for (int j = where[x]; j < rect[x]; j++) {
-                if (i >= space[0].length || j >= space.length || space[j][i] != 0)
+        for (int row = where[y]; row < rect[y]; row++) {
+            for (int column = where[x]; column < rect[x]; column++) {
+                if (column >= space[row].length || row >= space.length || space[row][column] != 0)
                     return false;
             }
         }
@@ -124,10 +119,10 @@ public class Blocks {
     }
 
     private static int[] findEmptyCell(int[][] searchSpace) {
-        for (int i = 0; i < searchSpace.length; i++) {
-            for (int j = 0; j < searchSpace[i].length; j++) {
-                if (searchSpace[j][i] == 0)
-                    return new int[]{j, i};
+        for (int row = 0; row < searchSpace.length; row++) {
+            for (int column = 0; column < searchSpace[row].length; column++) {
+                if (searchSpace[row][column] == 0)
+                    return new int[]{column, row};
             }
         }
         return null;
@@ -137,49 +132,47 @@ public class Blocks {
         int width = 0;
         int height = 0;
         int i = relativeStartingPosition[x];
-        int j = relativeStartingPosition[y];
+        int row = relativeStartingPosition[y];
 
         // First row
-        while (i < searchSpace[j].length - 1 && searchSpace[i][j] == 0) {
+        while (i < searchSpace[row].length && searchSpace[row][i] == 0) {
             width++;
             i++;
         }
 
         // Other rows
         outer:
-        for (; j < searchSpace.length; j++) {
-            for (int k = 0; k < searchSpace[j].length; k++) {
-                if (searchSpace[j][k] != 0)
+        for (; row < searchSpace.length; row++) {
+            for (int column = relativeStartingPosition[x]; column < searchSpace[row].length; column++) {
+                if (searchSpace[row][column] != 0)
                     break outer;
             }
             height++;
         }
-        height++;
 
-        int[][] out = new int[width][height];
+        int[][] out = new int[height][width];
         return out;
     }
 
-    private static void place(int[] rect, int[] nextPosition) {
-        drawBlock.placeRect(rect[x], rect[y], nextPosition[x], nextPosition[y]);
-        fill(actualGrid, rect, nextPosition, calls);
+    private static void place(int[][] subGrid, int[] rect, int[] absoluteLocation) {
+        used.add(rect);
+        drawBlock.placeRect(rect[x], rect[y], absoluteLocation[x], absoluteLocation[y]);
+        fill(subGrid, rect, origin, calls);
     }
 
     private static void readData(Scanner input) {
-        String[] firstLine = input.nextLine().split(" ");
-        width = Integer.parseInt(firstLine[0]);
-        height = Integer.parseInt(firstLine[1]);
-        int initial = Integer.parseInt(firstLine[2]);
+        width = input.nextInt();
+        height = input.nextInt();
+        int blockCount = input.nextInt();
 
         drawBlock = new DrawBlock(width, height);
-        actualGrid = new int[width][height];
+        actualGrid = new int[height][width];
 
-        for (int i = 0; i < initial; i++) {
+        for (int i = 0; i < blockCount; i++) {
             int[] rect = {input.nextInt(), input.nextInt()};
             inputBlocks.add(rect);
             drawBlock.useRect(rect[x], rect[y]);
         }
-//        inputBlocks.sort(Comparator.comparingInt(r -> -r[x] * r[y]));
     }
 
     private static boolean processArgs(String[] args) {
