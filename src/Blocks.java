@@ -111,7 +111,7 @@ public class Blocks {
 
         for (int row = where[y]; row < rect[y]; row++) {
             for (int column = where[x]; column < rect[x]; column++) {
-                if (column >= space[row].length || row >= space.length || space[row][column] != 0)
+                if (row >= space.length || column >= space[row].length || space[row][column] != 0)
                     return false;
             }
         }
@@ -173,6 +173,8 @@ public class Blocks {
             inputBlocks.add(rect);
             drawBlock.useRect(rect[x], rect[y]);
         }
+
+        inputBlocks.sort(Comparator.comparingInt(block -> -block[x] * block[y]));
     }
 
     private static boolean processArgs(String[] args) {
