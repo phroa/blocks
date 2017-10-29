@@ -75,6 +75,8 @@ public class Blocks {
             } else {
                 continue;
             }
+
+            used.add(block);
             place(searchSpace, use, absoluteLocation);
 
             int[] location = findEmptyCell(searchSpace);
@@ -155,7 +157,6 @@ public class Blocks {
     }
 
     private static void place(int[][] subGrid, int[] rect, int[] absoluteLocation) {
-        used.add(rect);
         drawBlock.placeRect(rect[x], rect[y], absoluteLocation[x], absoluteLocation[y]);
         fill(subGrid, rect, origin, calls);
     }

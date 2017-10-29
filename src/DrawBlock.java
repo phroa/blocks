@@ -6,9 +6,14 @@
  * http://creativecommons.org/licenses/by-nc/3.0/ or send a letter to Creative
  * Commons, PO Box 1866, Mountain View, CA 94042, USA.
  */
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
+import java.awt.Stroke;
+import java.awt.geom.AffineTransform;
+import java.awt.geom.Rectangle2D;
+import java.awt.image.BufferedImage;
 import java.util.*;
 
 /* Class DrawBlock
@@ -59,16 +64,75 @@ import java.util.*;
  * see the description of each method below for specific exceptions that can
  * be thrown.
  *
+ * The following calls are available to control the operation of DrawBlock:
+ *   to turn animation on/off:
+ *     db.setAnimate(true/false); // true to turn on, false to turn off (default on)
+ *   to turn drawing of any final solution on/off:
+ *     db.setDrawFinal(true/false); // true to turn on, false to turn off (default on)
+ *   to turn printing of any final solution on/off:
+ *     db.setPrintFinal(true/false); // true to turn on, false to turn off (default on)
+ *   to control length of delay during animation:
+ *     db.setDelay(delayTime); // delayTime is in milliseconds (default 50)
+ *
  * Note: After a rectangle is placed on the target rectangle, the drawing
  * will delay for a fixed time. A call to g.setDelay(int delayTime) will
- * set the delay time to the given number of milliseconds. So, a one
- * second delay after each step is obtained by calling g.setDelay(1000).
- * The default delay is 50 milliseconds.
+ * set the delay time to the given number of milliseconds.
  */
 public class DrawBlock {
 
    // The maximum size for either dimension of the target rectangle.
    public static final int MAX_SIZE = 99;
+
+   // Flags that control behavior
+   private boolean animate = true; // Animate the search processArgs
+   private boolean drawFinal = true; // Drawing of any final solution
+   private boolean printFinal = true; // Print any final solution
+   private int drawSleepTime = 50; // Time in milliseconds to wait between steps
+
+   /* Turn animation on and off.
+    *
+    * The prior value of the animate flag is returned.
+    */
+   public boolean setAnimate(boolean animateValue) {
+      boolean oldValue = animate;
+      animate = animateValue;
+      if (animate && !oldValue) {
+         redraw();
+      }
+      return oldValue;
+   }
+
+   /* Set flag to print solutions.
+    *
+    * The prior value is returned.
+    */
+   public boolean setPrintfinal(boolean print) {
+      boolean oldValue = printFinal;
+      printFinal = print;
+      return oldValue;
+   }
+
+   /* Set flag to draw solutions.
+    *
+    * The prior value is returned.
+    */
+   public boolean setDrawfinal(boolean draw) {
+      boolean oldValue = drawFinal;
+      drawFinal = draw;
+      return oldValue;
+   }
+
+   /* Set the delay time for animations.
+    *
+    * The prior value is returned.
+    */
+   public int setSleepTime(int sleep) {
+      int oldValue = drawSleepTime;
+      if (sleep < 0)
+         sleep = 0;
+      drawSleepTime = sleep;
+      return oldValue;
+   }
 
    /* There was a problem placing or clearing a rectangle in the target
     * rectangle. The associated message explains the exact reason the
@@ -144,7 +208,7 @@ public class DrawBlock {
 
       @Override public String toString() {
          return String.format("rectangle %d x %d at (%d, %d)",
-               r - l, b - t, l, t);
+                 r - l, b - t, l, t);
       }
 
       boolean hasLoc(int c, int r) {
@@ -153,12 +217,12 @@ public class DrawBlock {
 
       boolean inside(RectLoc other) {
          return this. l >= other.l && this.r <= other.r &&
-               this.t >= other.t && this.b <= other.b;
+                 this.t >= other.t && this.b <= other.b;
       }
 
       boolean overlap(RectLoc other) {
          return this.r > other.l && this.l < other.r &&
-               this.b > other.r && this.t < other.b;
+                 this.b > other.r && this.t < other.b;
       }
    }
 
@@ -167,6 +231,7 @@ public class DrawBlock {
    private final RectLoc targetRect;
    private ArrayList<Rect> rectsToUse = new ArrayList<>();
    private boolean setupComplete = false;
+   private int minHeight, minWidth; // minimum height and width over all rectangles
 
    private boolean[] usedRects;
    private RectLoc[] placedRects;
@@ -185,7 +250,7 @@ public class DrawBlock {
    public DrawBlock(int w, int h) {
       if (w < 1 || w > MAX_SIZE || h < 1 || h > MAX_SIZE) {
          throw new IllegalArgumentException(
-               String.format("Bad target rectangle size %d x %d", w, h));
+                 String.format("Bad target rectangle size %d x %d", w, h));
       }
       targetWidth = w;
       targetHeight = h;
@@ -203,7 +268,7 @@ public class DrawBlock {
       int maxRectSize = Math.max(targetWidth, targetHeight);
       if (w < 1 || w > maxRectSize || h < 1 || h > maxRectSize) {
          throw new IllegalArgumentException(
-               String.format("Bad rectangle size %d x %d", w, h));
+                 String.format("Bad rectangle size %d x %d", w, h));
       }
       rectsToUse.add(Rect.makeRect(w, h));
    }
@@ -223,8 +288,8 @@ public class DrawBlock {
       int targetSize = targetWidth * targetHeight;
       if (sum != targetSize) {
          throw new IllegalStateException(
-               String.format("Total size of all initial rectangles (%d) is not equal to size of target(%d)",
-                  sum, targetSize));
+                 String.format("Total size of all initial rectangles (%d) is not equal to size of target(%d)",
+                         sum, targetSize));
       }
 
       // Setup structures to track progress
@@ -235,13 +300,14 @@ public class DrawBlock {
       Arrays.fill(placedRects, null); // Again, not really necessary
       numUsed = 0;
 
-      // Setup for printing the target rectangles
-      int minDim = Integer.MAX_VALUE;
+      // Setup for drawing and printing the target rectangles
+      minHeight = Integer.MAX_VALUE;
+      minWidth = Integer.MAX_VALUE;
       for (Rect rect : rectsToUse) {
-         if (rect.h < minDim)
-            minDim = rect.h;
+         minHeight = Math.min(minHeight, rect.h);
+         minWidth = Math.min(minWidth, rect.w);
       }
-      switch (minDim) {
+      switch (minHeight) {
          case 1:
             printRectMultiple = 3;
             break;
@@ -253,12 +319,9 @@ public class DrawBlock {
       }
 
       // Now draw the initial target rectangle.
-      draw();
-   }
-
-   // Do the initial display of the target rectangle.
-   private void draw() {
-
+      if (animate) {
+         setupGraphics();
+      }
    }
 
    /* Place the initial rectangle with width w and height h at column c and
@@ -291,7 +354,7 @@ public class DrawBlock {
       RectLoc loc = new RectLoc(rectNum, theRect, c, r);
       if (!loc.inside(targetRect)) {
          throwPlaceException(String.format("%s does not fit inside target rectangle %d x %d",
-                  loc, targetWidth, targetHeight));
+                 loc, targetWidth, targetHeight));
       }
 
       for (int n = 0; n < numUsed; ++n) {
@@ -306,10 +369,21 @@ public class DrawBlock {
       placedRects[numUsed] = loc;
       ++numUsed;
 
+      // Draw the rectangle it needed
+      if (animate) {
+         drawRect(loc, true);
+      }
+
       // If the target rectangle has been successfully filled, output the Found
       // solution.
-      if (numUsed == rectsToUse.size())
-         printRect();
+      if (numUsed == rectsToUse.size()) {
+         if (printFinal) {
+            printRect();
+         }
+         if (drawFinal && !animate) {
+            redraw();
+         }
+      }
    }
 
    /* Undo a placeRect
@@ -330,15 +404,20 @@ public class DrawBlock {
       }
       RectLoc lastLoc = placedRects[numUsed - 1];
       if (lastLoc.l != c || lastLoc.t != r ||
-            lastLoc.r - lastLoc.l != w || lastLoc.b - lastLoc.t != h) {
+              lastLoc.r - lastLoc.l != w || lastLoc.b - lastLoc.t != h) {
          throwPlaceException(String.format("rectangle to be unplaced %d x %d @ (%d, %d) doesn't match last placed %s",
-                  w, h, c, r, lastLoc));
+                 w, h, c, r, lastLoc));
       }
 
       // Everything's good
       --numUsed;
       usedRects[lastLoc.rectNum] = false;
       placedRects[numUsed] = null;
+
+      // Clear the rectangle
+      if (animate) {
+         clearRect(lastLoc);
+      }
    }
 
    private int findUnusedRect(int w, int h) {
@@ -365,11 +444,11 @@ public class DrawBlock {
       if (matched) {
          // Found a matching rect but it was already usedRect
          throwPlaceException(
-               String.format("rectangle %d x %d has already been used", w, h));
+                 String.format("rectangle %d x %d has already been used", w, h));
       } else {
          // There is no such rectangle
          throwPlaceException(
-               String.format("rectangle %d x %d does not exist", w, h));
+                 String.format("rectangle %d x %d does not exist", w, h));
       }
       throw new AssertionError("Impossible. Report this message to your instructor.");
    }
@@ -453,19 +532,166 @@ public class DrawBlock {
       return buf;
    }
 
-  //  public static void tryDrawRect() {
-  //     DrawingPanel dp = new DrawingPanel(1000, 800);
-  //     Graphics2D gc = dp.getGraphics();
-  //     dp.setBackground(Color.LIGHT_GRAY);
-  //     gc.setColor(Color.DARK_GRAY);
-  //     gc.fillRect(100, 100, 300, 200);
-  //
-  //     gc.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
-  //     gc.setColor(Color.WHITE);
-  //     gc.drawString("28x11", 110, 120);
-  //  }
-  //
-  //  public static void main(String[] args) {
-  //     tryDrawRect();
-  //  }
+   private static final int MINIMUM_WINDOW = 600;
+   private static final int BORDER_WIDTH = 20;
+   private static final int MIN_SQUARE_SIZE = 2;
+   private int squareSize = 50;
+   private static final int SEP_WIDTH = 1;
+   private static final int HIGHLIGHT_OFFSET = 7;
+   private static final int HIGHLIGHT_ARC = 10;
+   private static final int HIGHLIGHT_STROKE_SIZE = 4;
+   private static final int LABEL_SPACE = (SEP_WIDTH + HIGHLIGHT_OFFSET + 5);
+   private static int FONT_SIZE = 16;
+   private static final Font LABEL_FONT = new Font(Font.SANS_SERIF, Font.BOLD, FONT_SIZE);
+   private static final Color BORDER_COLOR = Color.BLACK;
+   private static final Color BACKGROUND_COLOR = Color.LIGHT_GRAY;
+   private static final Color SEP_COLOR = Color.WHITE;
+   private static final Color RECT_FILL = Color.DARK_GRAY;
+   private static final Color HIGHLIGHT_COLOR = Color.ORANGE.darker();
+   private static final Color FONT_COLOR = Color.ORANGE;
+   private static final Color LETTERING_COLOR = Color.WHITE;
+   private static final Stroke HIGHLIGHT_STROKE = new BasicStroke(HIGHLIGHT_STROKE_SIZE);
+
+   private DrawingPanel drawing = null;
+   private Graphics2D graphics = null;
+   private int panelWidth, panelHeight;
+   private int targetLeft, targetRight, targetTop, targetBottom;
+
+   private void redraw() {
+      if (drawing == null && setupComplete) {
+         setupGraphics();
+      }
+      drawBackground();
+      for (RectLoc loc : placedRects) {
+         drawRect(loc, false);
+      }
+   }
+
+   private void setupGraphics() {
+      createDrawingPanel();
+
+      drawing.setBackground(BACKGROUND_COLOR);
+      graphics = drawing.getGraphics();
+
+      targetLeft = BORDER_WIDTH;
+      targetRight = panelWidth - BORDER_WIDTH;
+      targetTop = BORDER_WIDTH;
+      targetBottom = panelHeight - BORDER_WIDTH;
+
+      drawBackground();
+   }
+
+   private void createDrawingPanel() {
+      BufferedImage tempImage = new BufferedImage(100, 100, BufferedImage.TYPE_INT_ARGB);
+      Graphics2D tempGraphics = (Graphics2D)tempImage.getGraphics();
+      tempGraphics.setFont(LABEL_FONT);
+      tempGraphics.setColor(FONT_COLOR);
+      Rectangle2D labelRect = tempGraphics.getFontMetrics().getStringBounds("99x99", tempGraphics);
+      // System.out.println("LabelRect = " + labelRect);
+
+      // Make sure window is big enough relative to target rectangle
+      squareSize = MIN_SQUARE_SIZE; // Minimum squareSize
+      // System.out.println("MIN_SQUARE_SIZE = " + MIN_SQUARE_SIZE);
+      int minWindowSize = (int)Math.ceil(((float)MINIMUM_WINDOW) / (Math.max(targetWidth, targetHeight)));
+      // System.out.println("MINIMUM_WINDOW = " + MINIMUM_WINDOW + " targetWidth = " + targetWidth
+      //       + " targetHeight =" + targetHeight + " minWindowSize = " + minWindowSize);
+      squareSize = Math.max(squareSize, minWindowSize);
+
+      // Make sure window is big enough realtive to labels in rectangles
+      int minRectHeight = (int)Math.ceil((labelRect.getHeight() + 2 * LABEL_SPACE) / minHeight);
+      int minRectWidth = (int)Math.ceil((labelRect.getWidth() + 2 * LABEL_SPACE) / minWidth);
+      // System.out.println("LABEL_SPACE = " + LABEL_SPACE + " minHeight = " + minHeight + " minWidth = " + minWidth);
+      // System.out.println("minRectHeight = " + minRectHeight + " minRectWidth = " + minRectWidth);
+      squareSize = Math.max(squareSize, minRectHeight);
+      squareSize = Math.max(squareSize, minRectWidth);
+
+      // Set size of drawing panel
+      panelWidth = targetWidth * squareSize + 2 * BORDER_WIDTH;
+      panelHeight = targetHeight * squareSize + 2 * BORDER_WIDTH;
+      drawing = new DrawingPanel(panelWidth, panelHeight);
+   }
+
+   private void drawBackground() {
+      graphics.setColor(BORDER_COLOR);
+      graphics.fillRect(0, 0, panelWidth, targetTop);
+      graphics.fillRect(0, 0, targetLeft, panelHeight);
+      graphics.fillRect(0, targetBottom, panelWidth, BORDER_WIDTH);
+      graphics.fillRect(targetRight, 0, BORDER_WIDTH, panelHeight);
+
+      drawSeparators(0, targetWidth, 0, targetHeight);
+   }
+
+   private void drawSeparators(int left, int right, int top, int bottom) {
+      graphics.setColor(SEP_COLOR);
+      int ytop = targetTop + top * squareSize;
+      int ybottom = targetTop + bottom * squareSize;
+      for (int c = left; c <= right; ++c) {
+         int x = targetLeft + c * squareSize;
+         graphics.drawLine(x, ytop, x, ybottom);
+      }
+      int xleft = targetLeft + left * squareSize;
+      int xright = targetLeft + right * squareSize;
+      for (int r = top; r <= bottom; ++r) {
+         int y = targetTop + r * squareSize;
+         graphics.drawLine(xleft, y, xright, y);
+      }
+   }
+
+   private void drawRect(RectLoc loc, boolean sleep) {
+      int rectW = loc.r - loc.l;
+      int rectH = loc.b - loc.t;
+      // Basic Rectangle
+      graphics.setColor(RECT_FILL);
+      int fillX = loc.l * squareSize + targetLeft + SEP_WIDTH;
+      int fillY = loc.t * squareSize + targetTop + SEP_WIDTH;
+      int fillW = rectW * squareSize - SEP_WIDTH;
+      int fillH = rectH * squareSize - SEP_WIDTH;
+      graphics.fillRect(fillX, fillY, fillW, fillH);
+
+      // Highlight loop
+      graphics.setColor(HIGHLIGHT_COLOR);
+      Stroke curStroke = graphics.getStroke();
+      graphics.setStroke(HIGHLIGHT_STROKE);
+      graphics.drawRoundRect(
+              fillX + HIGHLIGHT_OFFSET - SEP_WIDTH, fillY + HIGHLIGHT_OFFSET - SEP_WIDTH,
+              fillW - 2 * HIGHLIGHT_OFFSET + SEP_WIDTH, fillH - 2 * HIGHLIGHT_OFFSET + SEP_WIDTH,
+              HIGHLIGHT_ARC, HIGHLIGHT_ARC);
+      graphics.setStroke(curStroke);
+
+      // Label
+      graphics.setFont(LABEL_FONT);
+      graphics.setColor(FONT_COLOR);
+      String label;
+      if (rectW >= rectH) {
+         label = String.format("%dx%d", rectW, rectH);
+      } else {
+         label = String.format("%dx%d", rectH, rectW);
+      }
+      Rectangle2D labelRect = graphics.getFontMetrics().getStringBounds(label, graphics);
+      int centerX = fillX + fillW / 2 + SEP_WIDTH;
+      int centerY = fillY + fillH / 2 + SEP_WIDTH;
+      AffineTransform oldTransform = graphics.getTransform();
+      graphics.translate(centerX, centerY);
+      if (rectW < rectH) {
+         graphics.rotate(Math.PI / 2);
+      }
+      graphics.drawString(label, -(int)Math.round(labelRect.getCenterX()), -(int)Math.round(labelRect.getCenterY()));
+      graphics.setTransform(oldTransform);
+
+      // Sleep if wanted
+      if (sleep) {
+         drawing.sleep(drawSleepTime);
+      }
+   }
+
+   private void clearRect(RectLoc loc) {
+      graphics.setColor(BACKGROUND_COLOR);
+      int fillX = loc.l * squareSize + targetLeft;
+      int fillY = loc.t * squareSize + targetTop;
+      int fillW = (loc.r - loc.l) * squareSize;
+      int fillH = (loc.b - loc.t) * squareSize;
+      graphics.fillRect(fillX, fillY, fillW, fillH);
+      drawSeparators(loc.l, loc.r, loc.t, loc.b);
+      drawing.sleep(drawSleepTime);
+   }
 }
