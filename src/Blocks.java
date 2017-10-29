@@ -31,14 +31,13 @@ public class Blocks {
 
         readData(new Scanner(new File(args[0])));
 
+        drawBlock.setAnimate(false);
         drawBlock.setupComplete();
 
         if (explore()) {
             System.out.println("Solved in " + calls + " calls");
-            System.out.println(Arrays.deepToString(grid));
         } else {
             System.out.println("Can't solve, took " + calls + " calls to find that out");
-            System.out.println(Arrays.deepToString(grid));
         }
 
         drawBlock.printRect();
@@ -46,7 +45,8 @@ public class Blocks {
 
     private static boolean explore() {
         calls++;
-        System.out.println("calls = " + calls);
+        if (calls % 10000 == 0)
+            System.out.println("calls = " + calls);
 
         for (int[] block : inputBlocks) {
             int[] reversed = {block[y], block[x]};
@@ -96,9 +96,9 @@ public class Blocks {
     }
 
     private static boolean rectFits(int[] rect, int[] where) {
-        for (int row = where[y]; row < rect[y]; row++) {
-            for (int column = where[x]; column < rect[x]; column++) {
-                if (row + where[y] >= grid.length || column + where[x] >= grid[row].length || grid[row][column] != 0)
+        for (int row = 0; row < rect[y]; row++) {
+            for (int column = 0; column < rect[x]; column++) {
+                if (row + where[y] >= grid.length || column + where[x] >= grid[row].length || grid[row + where[y]][column + where[x]] != 0)
                     return false;
             }
         }
@@ -139,7 +139,8 @@ public class Blocks {
             drawBlock.useRect(rect[x], rect[y]);
         }
 
-        inputBlocks.sort(Comparator.comparingInt(block -> -block[x] * block[y]));
+        // This puts the largest (by area) blocks at the front of the list, so they are placed first.
+//        inputBlocks.sort(Comparator.comparingInt(block -> -block[x] * block[y]));
     }
 
     private static boolean processArgs(String[] args) {
