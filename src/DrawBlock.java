@@ -563,7 +563,8 @@ public class DrawBlock {
       }
       drawBackground();
       for (RectLoc loc : placedRects) {
-         drawRect(loc, false);
+         if (loc != null)
+            drawRect(loc, false);
       }
    }
 
